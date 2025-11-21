@@ -858,8 +858,6 @@ bool make_tx(const string &filepath,
     return false;
   }
 
-  LOG_INFO << "Wrote tx file: " << out_filepath;
-
   return true;
 }
 

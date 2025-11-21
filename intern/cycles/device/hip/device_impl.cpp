@@ -574,7 +574,7 @@ void HIPDevice::mem_move_to_host(device_memory &mem)
 void HIPDevice::mem_copy_from(
     device_memory &mem, const size_t y, size_t w, const size_t h, size_t elem)
 {
-  if (mem.type == MEM_IMAGE || mem.type == MEM_GLOBAL) {
+  if (mem.type == MEM_IMAGE) {
     assert(!"mem_copy_from not supported for images.");
   }
   else if (mem.host_pointer) {

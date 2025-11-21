@@ -93,7 +93,7 @@ void device_memory::device_move_to_host()
 
 void device_memory::device_copy_from(const size_t y, const size_t w, size_t h, const size_t elem)
 {
-  assert(type != MEM_IMAGE && type != MEM_READ_ONLY && type != MEM_GLOBAL);
+  assert(type != MEM_IMAGE && type != MEM_READ_ONLY);
   device->mem_copy_from(*this, y, w, h, elem);
 }
 

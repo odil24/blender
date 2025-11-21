@@ -138,9 +138,9 @@ kernel_image_tile_map(KernelGlobals kg,
 #ifdef __KERNEL_GPU__
     /* For GPU, mark load requested and cancel shader execution. */
     if (tile_descriptor == KERNEL_TILE_LOAD_NONE) {
-      kernel_data_assign(image_texture_tile_descriptors,
-                         tex.tile_descriptor_offset + tile_offset,
-                         KERNEL_TILE_LOAD_REQUEST);
+      kernel_data_write(image_texture_tile_descriptors,
+                        tex.tile_descriptor_offset + tile_offset,
+                        KERNEL_TILE_LOAD_REQUEST);
     }
     sd->flag |= SD_CACHE_MISS;
     return tile_descriptor;

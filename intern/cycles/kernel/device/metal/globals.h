@@ -16,10 +16,9 @@ CCL_NAMESPACE_BEGIN
 
 struct KernelParamsMetal {
 
-  // TODO: removed const
-#define KERNEL_DATA_ARRAY(type, name) ccl_global type *name;
+#define KERNEL_DATA_ARRAY(type, name) const ccl_global type *name;
+#define KERNEL_DATA_ARRAY_WRITABLE(type, name) ccl_global type *name;
 #include "kernel/data_arrays.h"
-#undef KERNEL_DATA_ARRAY
 
   const IntegratorStateGPU integrator_state;
   const KernelData data;
@@ -34,7 +33,7 @@ using KernelGlobals = const ccl_global KernelGlobalsGPU *ccl_restrict;
 /* Abstraction macros */
 #define kernel_data launch_params_metal.data
 #define kernel_data_fetch(name, index) launch_params_metal.name[index]
-#define kernel_data_assign(name, index, value) launch_params_metal.name[index] = (value)
+#define kernel_data_write(name, index, value) launch_params_metal.name[index] = (value)
 #define kernel_data_array(name) launch_params_metal.name
 #define kernel_integrator_state launch_params_metal.integrator_state
 

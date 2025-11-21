@@ -829,9 +829,8 @@ void ImageManager::device_free_image(Scene *scene, size_t slot)
 
 void ImageManager::device_update_requested(Device *device, Scene *scene)
 {
-  // TODO: not supported for MEM_GLOBAL
-  // TODO: only do if modified
-  // scene->dscene.image_texture_tile_descriptors.copy_from_device();
+  // TODO: Make this work with multi-device rendering
+  scene->dscene.image_texture_tile_descriptors.copy_from_device();
 
   parallel_for(blocked_range<size_t>(0, images.size(), 1), [&](const blocked_range<size_t> &r) {
     for (size_t i = r.begin(); i != r.end(); i++) {
