@@ -107,11 +107,15 @@ struct KernelImageUDIM {
   int tex_id;
 };
 
+#define KERNEL_TILE_LOAD_NONE 0xFFFFFFFFU
+#define KERNEL_TILE_LOAD_REQUEST KERNEL_TILE_LOAD_NONE - 1
+#define KERNEL_TILE_LOAD_FAILED KERNEL_TILE_LOAD_NONE - 2
+
 struct KernelImageTexture {
   /* Index into image object map. */
   uint64_t slot = 0;
   /* TODO */
-  uint tile_descriptor_offset = UINT_MAX;
+  uint tile_descriptor_offset = KERNEL_TILE_LOAD_NONE;
   int tile_size_shift = 0;
   int tile_levels = 0;
   /* Image dimensions */
@@ -130,10 +134,6 @@ struct KernelImageTexture {
 #define KERNEL_IMAGE_TEX_PADDING 2
 
 using KernelTileDescriptor = uint;
-
-#define KERNEL_TILE_LOAD_NONE UINT_MAX
-#define KERNEL_TILE_LOAD_REQUEST UINT_MAX - 1
-#define KERNEL_TILE_LOAD_FAILED UINT_MAX - 2
 
 ccl_device_inline KernelTileDescriptor kernel_tile_descriptor_encode(const uint slot,
                                                                      const uint offset)

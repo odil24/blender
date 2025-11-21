@@ -967,8 +967,6 @@ void ImageManager::device_load_builtin(Device *device, Scene *scene, Progress &p
   }
 
   pool.wait_work();
-
-  device_copy_image_textures(device, scene);
 }
 
 void ImageManager::device_free_builtin(Scene *scene)
