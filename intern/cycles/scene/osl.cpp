@@ -113,7 +113,7 @@ bool OSLManager::need_update() const
 void OSLManager::device_update_pre(Device * /*device*/, Scene *scene)
 {
   if (scene->shader_manager->use_osl() || !scene->camera->script_name.empty()) {
-    shading_system_init(scene->shader_manager->get_scene_linear_space());
+    shading_system_init(scene->shader_manager->get_scene_linear_interop_id());
   }
 
   if (!need_update()) {
@@ -288,7 +288,7 @@ void OSLManager::device_free(Device *device, DeviceScene * /*dscene*/, Scene *sc
   });
 }
 
-void OSLManager::shading_system_init(ShaderManager::SceneLinearSpace colorspace)
+void OSLManager::shading_system_init(const string &colorspace_interop_id)
 {
   /* No need to do anything if we already have shading systems. */
   if (!ss_map.empty()) {
@@ -298,7 +298,7 @@ void OSLManager::shading_system_init(ShaderManager::SceneLinearSpace colorspace)
   /* create shading system, shared between different renders to reduce memory usage */
   const thread_scoped_lock lock(ss_shared_mutex);
 
-  foreach_osl_device(device_, [this, colorspace](Device *sub_device, OSLGlobals *) {
+  foreach_osl_device(device_, [this, colorspace_interop_id](Device *sub_device, OSLGlobals *) {
     const DeviceType device_type = sub_device->info.type;
 
     if (!ss_shared[device_type]) {
@@ -333,18 +333,14 @@ void OSLManager::shading_system_init(ShaderManager::SceneLinearSpace colorspace)
       ss->attribute("greedyjit", 1);
 
       /* OSL doesn't accept an arbitrary space, so support a few specific spaces. */
-      switch (colorspace) {
-        case ShaderManager::SceneLinearSpace::Rec709:
-          ss->attribute("colorspace", OSL::Strings::Rec709);
-          break;
-        case ShaderManager::SceneLinearSpace::Rec2020:
-          ss->attribute("colorspace", OSL::Strings::HDTV);
-          break;
-        case ShaderManager::SceneLinearSpace::ACEScg:
-          ss->attribute("colorspace", OSL::Strings::ACEScg);
-          break;
-        case ShaderManager::SceneLinearSpace::Unknown:
-          break;
+      if (colorspace_interop_id == "lin_rec709_scene") {
+        ss->attribute("colorspace", OSL::Strings::Rec709);
+      }
+      else if (colorspace_interop_id == "lin_rec2020_scene") {
+        ss->attribute("colorspace", OSL::Strings::HDTV);
+      }
+      else if (colorspace_interop_id == "lin_ap1_scene") {
+        ss->attribute("colorspace", OSL::Strings::ACEScg);
       }
 
       const char *groupdata_alloc_str = getenv("CYCLES_OSL_GROUPDATA_ALLOC");
@@ -706,7 +702,7 @@ OSLNode *OSLShaderManager::osl_node(ShaderGraph *graph,
   }
 
   /* Ensure shading system exists before we try to load a shader. */
-  scene->osl_manager->shading_system_init(scene->shader_manager->get_scene_linear_space());
+  scene->osl_manager->shading_system_init(scene->shader_manager->get_scene_linear_interop_id());
 
   /* Load shader code. */
   const char *hash;

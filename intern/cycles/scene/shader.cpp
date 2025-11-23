@@ -722,7 +722,7 @@ void ShaderManager::device_update_common(Device * /*device*/,
   kfilm->rec709_to_r = make_float4(rec709_to_r);
   kfilm->rec709_to_g = make_float4(rec709_to_g);
   kfilm->rec709_to_b = make_float4(rec709_to_b);
-  kfilm->is_rec709 = scene_linear_space == SceneLinearSpace::Rec709;
+  kfilm->is_rec709 = scene_linear_interop_id == "lin_rec709_scene";
 }
 
 void ShaderManager::device_free_common(Device * /*device*/, DeviceScene *dscene, Scene *scene)
@@ -974,22 +974,9 @@ void ShaderManager::init_xyz_transforms()
 {
   const Transform xyz_to_rgb = ColorSpaceManager::get_xyz_to_scene_linear_rgb();
 
-  if (ColorSpaceManager::get_scene_linear_is_rec709()) {
-    scene_linear_space = SceneLinearSpace::Rec709;
-  }
-  else if (transform_equal_threshold(xyz_to_rgb, ColorSpaceManager::get_xyz_to_rec2020(), 0.0001f))
-  {
-    scene_linear_space = SceneLinearSpace::Rec2020;
-  }
-  else if (transform_equal_threshold(xyz_to_rgb, ColorSpaceManager::get_xyz_to_acescg(), 0.0001f))
-  {
-    scene_linear_space = SceneLinearSpace::ACEScg;
-  }
-  else {
-    scene_linear_space = SceneLinearSpace::Unknown;
-  }
+  scene_linear_interop_id = ColorSpaceManager::get_scene_linear_interop_id();
 
-  if (scene_linear_space == SceneLinearSpace::Rec709) {
+  if (scene_linear_interop_id == "lin_rec709_scene") {
     rec709_to_r = make_float3(1.0f, 0.0f, 0.0f);
     rec709_to_g = make_float3(0.0f, 1.0f, 0.0f);
     rec709_to_b = make_float3(0.0f, 0.0f, 1.0f);

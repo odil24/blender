@@ -35,6 +35,8 @@ class ColorSpaceManager {
 
   /* Test if colorspace is for non-color data. */
   static bool colorspace_is_data(ustring colorspace);
+  /* Return color interop forum interop ID. */
+  static const char *colorspace_interop_id(ustring colorspace);
 
   /* Convert pixels in the specified colorspace to scene linear color for
    * rendering. Must be a colorspace returned from detect_known_colorspace. */
@@ -65,7 +67,7 @@ class ColorSpaceManager {
   /* Compute unique string for texture cache hashing and metadata. */
   static const string &get_xyz_to_scene_linear_rgb_string();
   /* Determine if scene linear is a common known space. */
-  static bool get_scene_linear_is_rec709();
+  static const char *get_scene_linear_interop_id();
 
  private:
   static ColorSpaceProcessor *get_processor(ustring colorspace);

@@ -35,9 +35,9 @@ static unordered_map<ustring, OCIO::ConstProcessorRcPtr> cache_processors;
 static thread_mutex cache_colorspaces_mutex;
 static unordered_map<ustring, ustring> cached_colorspaces;
 
-static thread_mutex cache_scene_linear_is_rec709_mutex;
-static bool cache_scene_linear_is_rec709_done = false;
-static bool cache_scene_linear_is_rec709 = false;
+static thread_mutex cache_scene_linear_interop_id_mutex;
+static bool cache_scene_linear_interop_id_done = false;
+static const char *cache_scene_linear_interop_id = "";
 #endif
 
 static thread_mutex cache_xyz_to_scene_linear_mutex;
@@ -74,7 +74,7 @@ ColorSpaceProcessor *ColorSpaceManager::get_processor(ustring colorspace)
       if (colorspace == u_colorspace_srgb) {
         /* Linear Rec.709 to sRGB is handled separately in to_scene_linear, here
          * we only need the matrix transform from scene_linear to Linear Rec.709. */
-        if (get_scene_linear_is_rec709()) {
+        if (strcmp(get_scene_linear_interop_id(), "lin_rec709_scene") == 0) {
           cache_processors[colorspace] = nullptr;
         }
         else {
@@ -686,25 +686,33 @@ const std::string &ColorSpaceManager::get_xyz_to_scene_linear_rgb_string()
   return cache_xyz_to_scene_linear_hash;
 }
 
-bool ColorSpaceManager::get_scene_linear_is_rec709()
+const char *ColorSpaceManager::get_scene_linear_interop_id()
 {
 #ifdef WITH_OCIO
-  const thread_scoped_lock cache_lock(cache_scene_linear_is_rec709_mutex);
+  const thread_scoped_lock cache_lock(cache_scene_linear_interop_id_mutex);
 
-  if (!cache_scene_linear_is_rec709_done) {
+  if (!cache_scene_linear_interop_id_done) {
     const Transform xyz_to_rgb = get_xyz_to_scene_linear_rgb();
-    const Transform xyz_to_rec709 = get_xyz_to_rec709();
-    cache_scene_linear_is_rec709 = transform_equal_threshold(xyz_to_rgb, xyz_to_rec709, 0.0001f);
-    cache_scene_linear_is_rec709_done = true;
 
-    if (cache_scene_linear_is_rec709) {
-      LOG_INFO << "Colorspace scene_linear is Linear Rec.709";
+    if (transform_equal_threshold(xyz_to_rgb, get_xyz_to_rec709(), 0.0001f)) {
+      cache_scene_linear_interop_id = "lin_rec709_scene";
     }
+    else if (transform_equal_threshold(xyz_to_rgb, get_xyz_to_rec2020(), 0.0001f)) {
+      cache_scene_linear_interop_id = "lin_rec2020_scene";
+    }
+    else if (transform_equal_threshold(xyz_to_rgb, get_xyz_to_acescg(), 0.0001f)) {
+      cache_scene_linear_interop_id = "lin_ap1_scene";
+    }
+    else {
+      cache_scene_linear_interop_id = "unknown";
+    }
+
+    cache_scene_linear_interop_id_done = true;
   }
 
-  return cache_scene_linear_is_rec709;
+  return cache_scene_linear_interop_id;
 #else
-  return true;
+  return SceneLinearSpace::Rec709
 #endif
 }
 
