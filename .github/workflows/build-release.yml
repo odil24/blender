@@ -45,16 +45,16 @@ jobs:
           path: ./lib
           key: blender-libs-${{ runner.os }}-${{ hashFiles('build_files/**/*') }}
 
-      # ---- Update Sources & Libraries (auto-confirm) ----
+      # ---- Update Sources & Libraries (auto-download) ----
       - name: Update Sources & Libraries
         if: steps.blender_lib_cache.outputs.cache-hit != 'true'
         shell: cmd
         run: |
-          echo Auto-confirm enabled
+          echo Auto-download enabled
           set BLENDER_SKIP_CONFIRMATION=1
           set FORCE_YES=1
-          REM Отвечаем "y" на все запросы make.bat update
-          echo y | call make.bat update
+          set BLENDER_FORCE_DOWNLOAD=1
+          call make.bat update
 
       # ---- Build Blender ----
       - name: Build Blender
