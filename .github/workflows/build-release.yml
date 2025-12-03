@@ -1,29 +1,30 @@
 name: Build Blender (Windows)
 
 on:
-  workflow_dispatch:   # manual trigger
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build-blender:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout source with LFS
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
-      - name: Setup MSVC environment
+      - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install dependencies
         run: |
-          choco install git cmake ninja -y
+          choco install cmake ninja -y
           choco install python --version=3.11.9 -y
-          python -m pip install --upgrade pip
-          python -m pip install requests
 
       - name: Configure Blender build
+        shell: cmd
         run: |
           mkdir build
           cd build
@@ -31,19 +32,20 @@ jobs:
             -G "Ninja" ^
             -DWITH_PLAYER=OFF ^
             -DWITH_INSTALL_PORTABLE=ON ^
-            -DWITH_PYTHON_INSTALL=ON ^
-            -DWITH_CYCLES=ON ^
-            -DWITH_OPENIMAGEIO=ON ^
-            -DWITH_OPENCOLORIO=ON ^
-            -DWITH_USD=ON
+            -DWITH_PYTHON_INSTALL=ON
 
-      - name: Compile Blender
+      - name: Build Blender
         run: |
           cd build
           ninja
+
+      - name: Package Blender build
+        run: |
+          cd build/bin/Release
+          powershell Compress-Archive -Path * -DestinationPath ../../blender-windows-build.zip
 
       - name: Upload Blender artifact
         uses: actions/upload-artifact@v4
         with:
           name: blender-windows-build
-          path: build/bin/Release
+          path: build/blender-windows-build.zip
