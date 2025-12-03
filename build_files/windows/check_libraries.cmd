@@ -29,9 +29,9 @@ if NOT EXIST "%BUILD_VS_LIBDIR%\.git" (
 			echo *                                                       *
 			echo *********************************************************
 :RETRY
-			"%GIT%" -C "%BLENDER_DIR%" config --local "submodule.%BUILD_VS_LIBDIR%.update" "checkout"
+			"%GIT%" -C "%BLENDER_DIR%\" config --local "submodule.%BUILD_VS_LIBDIR%.update" "checkout"
 			set GIT_LFS_SKIP_SMUDGE=1
-			"%GIT%" -C "%BLENDER_DIR%" submodule update --progress --init "%BUILD_VS_LIBDIR%"
+			"%GIT%" -C "%BLENDER_DIR%\" submodule update --progress --init "%BUILD_VS_LIBDIR%"
 			set GIT_LFS_SKIP_SMUDGE=
 			"%GIT%" -C "./%BUILD_VS_LIBDIR%" lfs pull
 			if errorlevel 1 (
