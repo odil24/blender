@@ -1,0 +1,133 @@
+name: Build Blender Windows Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Тип сборки"
+        required: true
+        default: "Release"
+        type: choice
+        options:
+          - Release
+          - Debug
+
+  # Автоматические сборки по тегам только для 4.5.x и 5.0.x
+  push:
+    tags:
+      - "v4.5.*"
+      - "v5.0.*"
+
+  # Nightly по расписанию (опционально, отключено)
+  # schedule:
+  #   - cron: "0 3 * * *"
+
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    env:
+      BLENDER_BUILD_CONFIG: ${{ github.event.inputs.build_type || 'Release' }}
+      BUILD_DIR: build_windows_x64
+
+    steps:
+      # ---- CHECKOUT ----
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Init Git LFS
+        run: git lfs install
+
+      # ---- CACHE LIBRARIES ----
+      - name: Cache Blender Libraries
+        id: blender_lib_cache
+        uses: actions/cache@v4
+        with:
+          path: ./lib
+          key: blender-libs-${{ runner.os }}-${{ hashFiles('build_files/**/*') }}
+
+      - name: Download Blender Libraries
+        if: steps.blender_lib_cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          call make.bat update
+
+      # ---- CUDA / OPTIX (по умолчанию включено в раннере) ----
+      - name: CUDA/OptiX Setup
+        run: |
+          echo Using default CUDA/OptiX from Windows runner...
+
+      # ---- BUILD ----
+      - name: Build Blender (%BLENDER_BUILD_CONFIG%)
+        shell: cmd
+        run: |
+          call make.bat %BLENDER_BUILD_CONFIG%
+
+      # ---- VERIFY ----
+      - name: Verify Build Output
+        shell: cmd
+        run: |
+          echo Checking directory:
+          dir %BUILD_DIR%\bin\%BLENDER_BUILD_CONFIG%
+
+      # ---- CREATE ZIP ----
+      - name: Create Standard ZIP
+        shell: powershell
+        run: |
+          $zipName = "blender-${{ env.BLENDER_BUILD_CONFIG }}.zip"
+          Compress-Archive -Path "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" `
+                           -DestinationPath $zipName
+          Write-Output "Created $zipName"
+
+      # ---- PORTABLE VERSION ----
+      - name: Create Portable Folder
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path blender-portable
+          Copy-Item "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" `
+                    -Destination blender-portable -Recurse
+          $zipPortable = "blender-portable-${{ env.BLENDER_BUILD_CONFIG }}.zip"
+          Compress-Archive -Path "blender-portable\*" -DestinationPath $zipPortable
+          Write-Output "Created $zipPortable"
+
+      # ---- UPLOAD ARTIFACTS ----
+      - name: Upload Standard ZIP Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-windows-${{ env.BLENDER_BUILD_CONFIG }}
+          path: blender-${{ env.BLENDER_BUILD_CONFIG }}.zip
+
+      - name: Upload Portable ZIP Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-windows-portable-${{ env.BLENDER_BUILD_CONFIG }}
+          path: blender-portable-${{ env.BLENDER_BUILD_CONFIG }}.zip
+
+
+
+  # ---- AUTO-RELEASE JOB ----
+  publish-release:
+    needs: build-windows
+
+    # Работает ТОЛЬКО для тегов v4.5.x и v5.0.x
+    if: |
+      startsWith(github.ref, 'refs/tags/v4.5.') ||
+      startsWith(github.ref, 'refs/tags/v5.0.')
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_files
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release_files/**/*
+          generate_release_notes: true
