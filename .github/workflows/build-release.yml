@@ -17,9 +17,6 @@ on:
       - "v4.5.*"
       - "v5.0.*"
 
-  # schedule:
-  #   - cron: "0 3 * * *"
-
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -27,11 +24,11 @@ jobs:
     env:
       BLENDER_BUILD_CONFIG: ${{ github.event.inputs.build_type || 'Release' }}
       BUILD_DIR: build_windows_x64
+      BLENDER_SKIP_CONFIRMATION: 1
       BLENDER_FORCE_YES: 1
       FORCE_YES: 1
 
     steps:
-      # ---- Checkout ----
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
@@ -41,82 +38,69 @@ jobs:
       - name: Git LFS Init
         run: git lfs install
 
-      # ---- Cache Blender Libraries ----
-      - name: Cache Libraries Download
+      - name: Cache Blender Libraries
         id: blender_lib_cache
         uses: actions/cache@v4
         with:
           path: ./lib
           key: blender-libs-${{ runner.os }}-${{ hashFiles('build_files/**/*') }}
 
-      # ---- auto-yes update ----
       - name: Update Sources & Libraries
         if: steps.blender_lib_cache.outputs.cache-hit != 'true'
         shell: cmd
         run: |
-          echo y | call make.bat update
+          echo Auto-confirm enabled
+          set BLENDER_SKIP_CONFIRMATION=1
+          call make.bat update
 
-      # ---- CUDA (Blender autodetects) ----
-      - name: CUDA Prepare
-        shell: cmd
-        run: |
-          echo Auto-detection of CUDA/OptiX enabled
-
-      # ---- Build ----
       - name: Build Blender
         shell: cmd
         run: |
-          echo y | call make.bat %BLENDER_BUILD_CONFIG%
+          set BLENDER_SKIP_CONFIRMATION=1
+          call make.bat %BLENDER_BUILD_CONFIG%
 
       - name: Verify Output
         shell: cmd
         run: |
-          echo Checking output directory...
           dir %BUILD_DIR%\bin\%BLENDER_BUILD_CONFIG%
 
-      # ---- ZIP ----
       - name: Create Release ZIP
         shell: powershell
         run: |
           $zipName = "blender-${{ env.BLENDER_BUILD_CONFIG }}.zip"
           Compress-Archive -Path "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" -DestinationPath $zipName
-          Write-Output "ZIP created: $zipName"
 
-      # ---- Portable ----
-      - name: Create Portable Build
+      - name: Create Portable ZIP
         shell: powershell
         run: |
-          $folder = "blender-portable"
-          New-Item -ItemType Directory -Path $folder
-          Copy-Item "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" -Destination $folder -Recurse
+          New-Item -ItemType Directory -Path blender-portable
+          Copy-Item "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" blender-portable -Recurse
           $zipPortable = "blender-portable-${{ env.BLENDER_BUILD_CONFIG }}.zip"
-          Compress-Archive -Path "$folder\*" -DestinationPath $zipPortable
-          Write-Output "Portable ZIP: $zipPortable"
+          Compress-Archive -Path "blender-portable\*" -DestinationPath $zipPortable
 
-      # ---- Upload ----
-      - name: Upload Build ZIP
+      - name: Upload Release ZIP
         uses: actions/upload-artifact@v4
         with:
           name: blender-windows-${{ env.BLENDER_BUILD_CONFIG }}
           path: blender-${{ env.BLENDER_BUILD_CONFIG }}.zip
 
-      - name: Upload Portable
+      - name: Upload Portable ZIP
         uses: actions/upload-artifact@v4
         with:
           name: blender-windows-portable-${{ env.BLENDER_BUILD_CONFIG }}
           path: blender-portable-${{ env.BLENDER_BUILD_CONFIG }}.zip
 
 
-  # ---- AUTO RELEASE ----
   publish-release:
     needs: build-windows
     if: |
       startsWith(github.ref, 'refs/tags/v4.5.') ||
       startsWith(github.ref, 'refs/tags/v5.0.')
+
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download artifacts
+      - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
           path: release_files
