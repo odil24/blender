@@ -60,7 +60,7 @@ jobs:
       - name: Build Blender
         shell: cmd
         run: |
-          call make.bat %BLENDER_BUILD_CONFIG%
+          call make.bat blender
 
       # ---- Verify Output ----
       - name: Verify Output
