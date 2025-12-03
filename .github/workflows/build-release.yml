@@ -1,58 +1,49 @@
-name: Build Blender Fork (MinGW)
+name: Build Blender (Windows)
 
 on:
+  workflow_dispatch:   # manual trigger
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
 
 jobs:
-  build-windows-mingw:
+  build-blender:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout source with LFS
+      - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          lfs: true
 
-      - name: Setup Git LFS
-        run: |
-          git lfs install
-          git lfs pull
-
-      - name: Setup MinGW
-        uses: egor-tensin/setup-mingw@v2
-        with:
-          version: 12.2.0
-          platform: x64
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install dependencies
-        run: choco install ninja cmake --yes
-
-      - name: Cache build directory
-        uses: actions/cache@v4
-        with:
-          path: build
-          key: ${{ runner.os }}-blender-mingw-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-blender-mingw-
-
-      - name: Configure build
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-
-      - name: Compile
-        run: cmake --build build --config Release
-
-      - name: Package artifacts
         run: |
-          mkdir package
-          copy build\bin\Release\*.exe package\
-          copy build\bin\Release\*.dll package\
+          choco install git cmake ninja -y
+          choco install python --version=3.11.9 -y
+          python -m pip install --upgrade pip
+          python -m pip install requests
 
-      - name: Upload artifacts
+      - name: Configure Blender build
+        run: |
+          mkdir build
+          cd build
+          cmake .. ^
+            -G "Ninja" ^
+            -DWITH_PLAYER=OFF ^
+            -DWITH_INSTALL_PORTABLE=ON ^
+            -DWITH_PYTHON_INSTALL=ON ^
+            -DWITH_CYCLES=ON ^
+            -DWITH_OPENIMAGEIO=ON ^
+            -DWITH_OPENCOLORIO=ON ^
+            -DWITH_USD=ON
+
+      - name: Compile Blender
+        run: |
+          cd build
+          ninja
+
+      - name: Upload Blender artifact
         uses: actions/upload-artifact@v4
         with:
-          name: blender-windows-mingw
-          path: package
+          name: blender-windows-build
+          path: build/bin/Release
