@@ -1,4 +1,4 @@
-name: Build Blender Fork
+name: Build Blender Fork (MinGW)
 
 on:
   push:
@@ -8,31 +8,39 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build-windows-mingw:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        compiler: [mingw]
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
 
-      - name: Setup MinGW (only if mingw)
-        if: matrix.compiler == 'mingw'
+    steps:
+      - name: Checkout source with LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Git LFS
+        run: |
+          git lfs install
+          git lfs pull
+
+      - name: Setup MinGW
         uses: egor-tensin/setup-mingw@v2
         with:
           version: 12.2.0
           platform: x64
 
       - name: Install dependencies
-        run: |
-          choco install ninja cmake --yes
+        run: choco install ninja cmake --yes
+
+      - name: Cache build directory
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-blender-mingw-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-blender-mingw-
 
       - name: Configure build
-        run: |
-          cmake -S . -B build `
-            -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Compile
         run: cmake --build build --config Release
@@ -46,5 +54,5 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: blender-windows-${{ matrix.compiler }}
+          name: blender-windows-mingw
           path: package
