@@ -1,5 +1,8 @@
 name: Build Blender Windows Release
 
+# Triggers:
+# - manual dispatch (choose Release/Debug)
+# - push tags only for v4.5.* and v5.0.*
 on:
   workflow_dispatch:
     inputs:
@@ -12,92 +15,222 @@ on:
           - Release
           - Debug
 
-  # Автоматические сборки по тегам только для 4.5.x и 5.0.x
   push:
     tags:
       - "v4.5.*"
       - "v5.0.*"
 
-  # Nightly по расписанию (опционально, отключено)
-  # schedule:
-  #   - cron: "0 3 * * *"
-
-
+# Windows-only job that builds, packages and uploads artifacts.
 jobs:
   build-windows:
     runs-on: windows-latest
-
     env:
-      BLENDER_BUILD_CONFIG: ${{ github.event.inputs.build_type || 'Release' }}
+      BUILD_CONFIG: ${{ github.event.inputs.build_type || 'Release' }}
       BUILD_DIR: build_windows_x64
+      # Cache keys include hash of build_files to bust when libs config changes
+      LIBS_CACHE_KEY: blender-libs-${{ runner.os }}-${{ hashFiles('build_files/**/*') }}
+      BUILD_CACHE_KEY: blender-build-${{ runner.os }}-${{ hashFiles('source/**/*') }}
 
     steps:
-      # ---- CHECKOUT ----
-      - name: Checkout Repository
+      - name: Checkout repository (full history + submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Init Git LFS
-        run: git lfs install
+      - name: Ensure Git LFS installed
+        run: |
+          git lfs install
 
-      # ---- CACHE LIBRARIES ----
-      - name: Cache Blender Libraries
-        id: blender_lib_cache
+      # ---- Cache external libraries (lib/) to avoid re-downloading every run ----
+      - name: Cache lib/ (external libraries)
+        id: cache-libs
         uses: actions/cache@v4
         with:
-          path: ./lib
-          key: blender-libs-${{ runner.os }}-${{ hashFiles('build_files/**/*') }}
+          path: |
+            lib
+            lib/windows_x64
+          key: ${{ env.LIBS_CACHE_KEY }}
+          restore-keys: |
+            blender-libs-${{ runner.os }}-
 
-      - name: Download Blender Libraries
-        if: steps.blender_lib_cache.outputs.cache-hit != 'true'
+      # ---- Cache build output (partial) to speed up incremental builds ----
+      - name: Cache build directory
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.BUILD_DIR }}
+          key: ${{ env.BUILD_CACHE_KEY }}
+          restore-keys: |
+            blender-build-${{ runner.os }}-
+
+      # ---- Update sources & libraries (auto-answer "y" to prompts) ----
+      - name: Update sources and download libraries (auto-yes)
+        # Use cmd so we can pipe "y" to any interactive prompt from make.bat
         shell: cmd
         run: |
-          call make.bat update
+          REM Many make.bat prompts ask "Would you like to download them? (y/n)"
+          REM Pipe 'y' repeatedly to be safe for all interactive prompts:
+          (for /L %i in (1,1,5) do @echo y) | call make.bat update
+        # If cache hit, we still run update to ensure any missing pieces are present,
+        # but piping 'y' will avoid interactive blocking.
 
-      # ---- CUDA / OPTIX (по умолчанию включено в раннере) ----
-      - name: CUDA/OptiX Setup
-        run: |
-          echo Using default CUDA/OptiX from Windows runner...
-
-      # ---- BUILD ----
-      - name: Build Blender (%BLENDER_BUILD_CONFIG%)
+      # ---- Configure environment (optional) ----
+      - name: Show VS / tools info
         shell: cmd
         run: |
-          call make.bat %BLENDER_BUILD_CONFIG%
+          echo Visual Studio / Compiler info:
+          vswhere -all -products * -format json || echo "vswhere not found"
+          where cl || echo "cl not in PATH"
+          cmake --version
+          python --version
 
-      # ---- VERIFY ----
-      - name: Verify Build Output
+      # ---- Build Blender (auto-answer any prompt similarly) ----
+      - name: Build Blender (call make.bat)
         shell: cmd
         run: |
-          echo Checking directory:
-          dir %BUILD_DIR%\bin\%BLENDER_BUILD_CONFIG%
+          REM Pipe 'y' a few times just in case any step prompts
+          (for /L %i in (1,1,3) do @echo y) | call make.bat %BUILD_CONFIG%
+        env:
+          GIT_LFS_SKIP_SMUDGE: "0"
 
-      # ---- CREATE ZIP ----
-      - name: Create Standard ZIP
+      - name: Verify build output exists
+        shell: cmd
+        run: |
+          echo "Expected output directory:"
+          if exist "%BUILD_DIR%\bin\%BUILD_CONFIG%" (
+            echo "OK: %BUILD_DIR%\bin\%BUILD_CONFIG% exists"
+            dir "%BUILD_DIR%\bin\%BUILD_CONFIG%"
+          ) else (
+            echo "ERROR: expected build output not found: %BUILD_DIR%\bin\%BUILD_CONFIG%"
+            exit /b 1
+          )
+
+      # ---- Create primary release ZIP (binaries & required libs) ----
+      - name: Create release ZIP
         shell: powershell
         run: |
-          $zipName = "blender-${{ env.BLENDER_BUILD_CONFIG }}.zip"
-          Compress-Archive -Path "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" `
-                           -DestinationPath $zipName
-          Write-Output "Created $zipName"
+          $cfg = "${{ env.BUILD_CONFIG }}"
+          $buildBin = Join-Path -Path "${{ env.BUILD_DIR }}" -ChildPath "bin\$cfg"
+          if (-not (Test-Path $buildBin)) { throw "Build output not found: $buildBin" }
+          $zipName = "blender-${{ env.BUILD_CONFIG }}-${{ github.run_id }}.zip"
+          Write-Output "Creating $zipName from $buildBin"
+          Compress-Archive -Path "$buildBin\*" -DestinationPath $zipName -Force
+          Write-Output $zipName
+        # upload created zip in next step
 
-      # ---- PORTABLE VERSION ----
-      - name: Create Portable Folder
+      # ---- Create portable layout and zip it ----
+      - name: Create portable package and ZIP
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Path blender-portable
-          Copy-Item "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" `
-                    -Destination blender-portable -Recurse
-          $zipPortable = "blender-portable-${{ env.BLENDER_BUILD_CONFIG }}.zip"
-          Compress-Archive -Path "blender-portable\*" -DestinationPath $zipPortable
-          Write-Output "Created $zipPortable"
+          $cfg = "${{ env.BUILD_CONFIG }}"
+          $buildBin = Join-Path -Path "${{ env.BUILD_DIR }}" -ChildPath "bin\$cfg"
+          $portableDir = "blender-portable-${cfg}"
+          if (Test-Path $portableDir) { Remove-Item -Recurse -Force $portableDir }
+          New-Item -ItemType Directory -Path $portableDir | Out-Null
 
-      # ---- UPLOAD ARTIFACTS ----
-      - name: Upload Standard ZIP Artifact
+          # Copy main binaries
+          Copy-Item -Path "$buildBin\*" -Destination $portableDir -Recurse -Force
+
+          # Copy expected folders for portable use if they exist (scripts, datafiles, etc.)
+          $extras = @("scripts", "datafiles", "2.93", "release")
+          foreach ($e in $extras) {
+            if (Test-Path (Join-Path $buildBin $e)) {
+              Copy-Item -Path (Join-Path $buildBin $e) -Destination (Join-Path $portableDir $e) -Recurse -Force
+            }
+          }
+
+          $portableZip = "$portableDir.zip"
+          Compress-Archive -Path "$portableDir\*" -DestinationPath $portableZip -Force
+          Write-Output $portableZip
+
+      # ---- Generate checksums (SHA256) for both zips ----
+      - name: Generate SHA256 checksums
+        shell: powershell
+        run: |
+          $zip = Get-ChildItem -Filter "blender-*.zip" | Select-Object -First 1
+          $portable = Get-ChildItem -Filter "blender-portable-*.zip" | Select-Object -First 1
+          if (-not $zip) { throw "Main zip not found" }
+          if (-not $portable) { throw "Portable zip not found" }
+          $zipHash = Get-FileHash $zip.FullName -Algorithm SHA256
+          $portableHash = Get-FileHash $portable.FullName -Algorithm SHA256
+          $zipHash.Hash > "$($zip.BaseName).sha256.txt"
+          $portableHash.Hash > "$($portable.BaseName).sha256.txt"
+          Write-Output "Hashes generated:"
+          Write-Output $zipHash
+          Write-Output $portableHash
+
+      # ---- Upload artifacts: main zip, portable zip and checksums ----
+      - name: Upload main ZIP artifact
         uses: actions/upload-artifact@v4
         with:
+          name: blender-windows-${{ env.BUILD_CONFIG }}
+          path: |
+            blender-*.zip
+            blender-*.sha256.txt
+
+      - name: Upload portable ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-windows-portable-${{ env.BUILD_CONFIG }}
+          path: |
+            blender-portable-*.zip
+            blender-portable-*.sha256.txt
+
+  # ===========================================================================
+  # publish-release job: runs only when a tag matching v4.5.* or v5.0.* was pushed
+  # It depends on successful build-windows and attaches artifacts to a GitHub Release
+  # ===========================================================================
+  publish-release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+
+    # Ensure we only publish for the allowed tags (extra guard)
+    if: |
+      github.event_name == 'push' &&
+      (
+        startsWith(github.ref, 'refs/tags/v4.5.') ||
+        startsWith(github.ref, 'refs/tags/v5.0.')
+      )
+
+    steps:
+      - name: Download artifacts from build job
+        uses: actions/download-artifact@v4
+        with:
+          path: release_files
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Contents of release_files:"
+          ls -la release_files || true
+
+      - name: Create GitHub Release and upload assets
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release_files/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create checksums file (aggregate) for Release body
+        run: |
+          echo "SHA256 checksums for release artifacts:" > aggregated_checksums.txt
+          for f in release_files/*; do
+            if [[ "$f" =~ \.zip$ ]]; then
+              sha256sum "$f" >> aggregated_checksums.txt
+            fi
+          done
+          echo "----"
+          cat aggregated_checksums.txt
+
+      - name: Upload aggregated checksums as release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: aggregated_checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}        with:
           name: blender-windows-${{ env.BLENDER_BUILD_CONFIG }}
           path: blender-${{ env.BLENDER_BUILD_CONFIG }}.zip
 
