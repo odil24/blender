@@ -12,6 +12,7 @@ on:
           - Release
           - Debug
 
+  # Авто-триггер по тегам ТОЛЬКО для 4.5.x и 5.0.x
   push:
     tags:
       - "v4.5.*"
@@ -24,11 +25,9 @@ jobs:
     env:
       BLENDER_BUILD_CONFIG: ${{ github.event.inputs.build_type || 'Release' }}
       BUILD_DIR: build_windows_x64
-      BLENDER_SKIP_CONFIRMATION: 1
-      BLENDER_FORCE_YES: 1
-      FORCE_YES: 1
 
     steps:
+      # ---- Checkout ----
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
@@ -38,46 +37,56 @@ jobs:
       - name: Git LFS Init
         run: git lfs install
 
-      - name: Cache Blender Libraries
+      # ---- Cache Blender Libraries ----
+      - name: Cache Libraries Download
         id: blender_lib_cache
         uses: actions/cache@v4
         with:
           path: ./lib
           key: blender-libs-${{ runner.os }}-${{ hashFiles('build_files/**/*') }}
 
+      # ---- Update Sources & Libraries (auto-confirm) ----
       - name: Update Sources & Libraries
         if: steps.blender_lib_cache.outputs.cache-hit != 'true'
         shell: cmd
         run: |
           echo Auto-confirm enabled
           set BLENDER_SKIP_CONFIRMATION=1
-          call make.bat update
+          set FORCE_YES=1
+          REM Отвечаем "y" на все запросы make.bat update
+          echo y | call make.bat update
 
+      # ---- Build Blender ----
       - name: Build Blender
         shell: cmd
         run: |
-          set BLENDER_SKIP_CONFIRMATION=1
           call make.bat %BLENDER_BUILD_CONFIG%
 
+      # ---- Verify Output ----
       - name: Verify Output
         shell: cmd
         run: |
           dir %BUILD_DIR%\bin\%BLENDER_BUILD_CONFIG%
 
+      # ---- Create Release ZIP ----
       - name: Create Release ZIP
         shell: powershell
         run: |
           $zipName = "blender-${{ env.BLENDER_BUILD_CONFIG }}.zip"
           Compress-Archive -Path "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" -DestinationPath $zipName
+          echo "ZIP created: $zipName"
 
-      - name: Create Portable ZIP
+      # ---- Create Portable ZIP ----
+      - name: Create Portable Version
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Path blender-portable
-          Copy-Item "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" blender-portable -Recurse
+          New-Item -ItemType Directory -Force -Path blender-portable
+          Copy-Item "$env:BUILD_DIR\bin\${{ env.BLENDER_BUILD_CONFIG }}\*" -Destination blender-portable -Recurse
           $zipPortable = "blender-portable-${{ env.BLENDER_BUILD_CONFIG }}.zip"
           Compress-Archive -Path "blender-portable\*" -DestinationPath $zipPortable
+          echo "Portable ZIP: $zipPortable"
 
+      # ---- Upload artifacts ----
       - name: Upload Release ZIP
         uses: actions/upload-artifact@v4
         with:
@@ -90,17 +99,16 @@ jobs:
           name: blender-windows-portable-${{ env.BLENDER_BUILD_CONFIG }}
           path: blender-portable-${{ env.BLENDER_BUILD_CONFIG }}.zip
 
-
+  # ---- Job для авто-релиза ----
   publish-release:
     needs: build-windows
     if: |
       startsWith(github.ref, 'refs/tags/v4.5.') ||
       startsWith(github.ref, 'refs/tags/v5.0.')
-
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download Artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: release_files
