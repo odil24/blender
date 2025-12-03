@@ -12,14 +12,10 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        compiler: [msvc, mingw]
+        compiler: [mingw]
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
-      - name: Setup MSVC (only if msvc)
-        if: matrix.compiler == 'msvc'
-        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Setup MinGW (only if mingw)
         if: matrix.compiler == 'mingw'
