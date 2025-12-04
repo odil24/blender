@@ -1,53 +1,68 @@
-name: Build Blender (Windows)
+name: Build Blender Windows (Ninja + sccache)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main ]  # or your default branch
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  build-blender:
+  build:
     runs-on: windows-latest
 
+    env:
+      BLENDER_SRC_DIR: ${{ github.workspace }}/blender
+      LIB_DIR: ${{ github.workspace }}/lib
+      BUILD_DIR: ${{ github.workspace }}/build_windows_ninja
+
     steps:
-      - name: Checkout source with LFS
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-          lfs: true   # ensures Git LFS files are fetched
+    - name: Checkout Blender Source
+      uses: actions/checkout@v4
+      with:
+        path: blender
+        submodules: false
 
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+    - name: Install Visual Studio Build Tools
+      uses: microsoft/setup-msbuild@v2
 
-      - name: Install dependencies
-        run: |
-          choco install cmake ninja -y
-          choco install python --version=3.11.9 -y
+    - name: Install CMake
+      uses: lukka/get-cmake@latest
 
-      - name: Configure Blender build
-        shell: cmd
-        run: |
-          mkdir build
-          cd build
-          cmake .. ^
-            -G "Ninja" ^
-            -DWITH_PLAYER=OFF ^
-            -DWITH_INSTALL_PORTABLE=ON ^
-            -DWITH_PYTHON_INSTALL=ON
+    - name: Install Ninja and sccache
+      run: |
+        choco install ninja sccache -y
+      shell: pwsh
 
-      - name: Build Blender
-        run: |
-          cd build
-          ninja
+    - name: Add sccache to PATH
+      run: |
+        echo "${env:ProgramFiles}\sccache" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+      shell: pwsh
 
-      - name: Package Blender build
-        run: |
-          cd build/bin/Release
-          powershell Compress-Archive -Path * -DestinationPath ../../blender-windows-build.zip
+    - name: Download Blender Libraries
+      working-directory: ${{ env.BLENDER_SRC_DIR }}
+      run: |
+        python ./build_files/cmake/Modules/Setup/SetupBlenderLibraries.py --source-dir . --lib-dir "${env:LIB_DIR}" --config release
+      shell: pwsh
 
-      - name: Upload Blender artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: blender-windows-build
-          path: build/blender-windows-build.zip
+    - name: Configure with CMake (Ninja + sccache + developer options)
+      run: |
+        cmake -S "${env:BLENDER_SRC_DIR}" -B "${env:BUILD_DIR}" ^
+          -G Ninja ^
+          -DCMAKE_BUILD_TYPE=Release ^
+          -DWITH_INSTALL_PORTABLE=ON ^
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache ^
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
+          -C "${env:BLENDER_SRC_DIR}/build_files/cmake/config/blender_developer.cmake"
+      shell: cmd
+
+    - name: Build Blender (INSTALL target)
+      run: |
+        cmake --build "${env:BUILD_DIR}" --target INSTALL -j
+      shell: cmd
+
+    - name: Upload Blender Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: blender-windows-ninja-build
+        path: ${{ env.BUILD_DIR }}/bin/
+        if-no-files-found: error
