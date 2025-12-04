@@ -2,7 +2,7 @@ name: Build Blender Windows (Ninja + sccache)
 
 on:
   push:
-    branches: [ main ]  # or your default branch
+    branches: [ main ]  # adjust to your default branch
   pull_request:
   workflow_dispatch:
 
@@ -10,8 +10,9 @@ jobs:
   build:
     runs-on: windows-latest
 
+    # All paths are relative to ${{ github.workspace }} (root)
     env:
-      BLENDER_SRC_DIR: ${{ github.workspace }}/blender
+      BLENDER_SRC_DIR: ${{ github.workspace }}
       LIB_DIR: ${{ github.workspace }}/lib
       BUILD_DIR: ${{ github.workspace }}/build_windows_ninja
 
@@ -19,8 +20,7 @@ jobs:
     - name: Checkout Blender Source
       uses: actions/checkout@v4
       with:
-        path: blender
-        submodules: false
+        submodules: false  # libraries are handled separately
 
     - name: Install Visual Studio Build Tools
       uses: microsoft/setup-msbuild@v2
@@ -35,16 +35,18 @@ jobs:
 
     - name: Add sccache to PATH
       run: |
-        echo "${env:ProgramFiles}\sccache" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+        echo "${env:ProgramFiles}\sccache" >> $env:GITHUB_PATH
       shell: pwsh
 
     - name: Download Blender Libraries
-      working-directory: ${{ env.BLENDER_SRC_DIR }}
       run: |
-        python ./build_files/cmake/Modules/Setup/SetupBlenderLibraries.py --source-dir . --lib-dir "${env:LIB_DIR}" --config release
-      shell: pwsh
+        python build_files/cmake/Modules/Setup/SetupBlenderLibraries.py ^
+          --source-dir . ^
+          --lib-dir "${env:LIB_DIR}" ^
+          --config release
+      shell: cmd
 
-    - name: Configure with CMake (Ninja + sccache + developer options)
+    - name: Configure CMake (Ninja + sccache + developer options)
       run: |
         cmake -S "${env:BLENDER_SRC_DIR}" -B "${env:BUILD_DIR}" ^
           -G Ninja ^
